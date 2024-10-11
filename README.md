@@ -1,4 +1,5 @@
 # sf-cam
+[![CI](https://github.com/ellishg/sf-cam/actions/workflows/ci.yml/badge.svg)](https://github.com/ellishg/sf-cam/actions/workflows/ci.yml)
 
 ```
 cargo install espup # Maybe?
