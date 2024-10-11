@@ -3,4 +3,4 @@
 /target
 /Cargo.lock
 
-cfg.toml
+/cfg.toml

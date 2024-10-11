@@ -29,6 +29,8 @@ fn main() -> Result<()> {
     let sys_loop = EspSystemEventLoop::take()?;
     let nvs = EspDefaultNvsPartition::take()?;
 
+    let mut camera_flash = PinDriver::output(peripherals.pins.gpio4)?;
+
     let mut wifi = wifi::BlockingWifi::wrap(
         wifi::EspWifi::new(peripherals.modem, sys_loop.clone(), Some(nvs))?,
         sys_loop,
@@ -80,8 +82,6 @@ fn main() -> Result<()> {
     info!("Wifi DHCP info: {:?}", ip_info);
 
     let mut server = EspHttpServer::new(&esp_idf_svc::http::server::Configuration::default())?;
-
-    let mut camera_flash = PinDriver::output(peripherals.pins.gpio4)?;
 
     for _ in 0..2 {
         camera_flash.set_high()?;
