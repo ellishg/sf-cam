@@ -2,18 +2,18 @@ name: Continuous Integration
 
 on:
   push:
-    paths-ignore:
-      - "**/README.md"
+     branches: [ "main" ]
   pull_request:
+     branches: [ "main" ]
   workflow_dispatch:
+     branches: [ "main" ]
 
 env:
   CARGO_TERM_COLOR: always
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
-  rust-checks:
-    name: Rust Checks
+  checks:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -36,6 +36,8 @@ jobs:
           default: true
           buildtargets: esp32
           ldproxy: true
+      - name: copy config
+        run: cp cfg.toml.example cfg.toml
       - name: Enable caching
         uses: Swatinem/rust-cache@v2
       - name: Run command
