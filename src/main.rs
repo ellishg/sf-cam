@@ -39,8 +39,8 @@ fn main() -> Result<()> {
     ))?;
     wifi.start()?;
 
-    let wifi_ap = wifi
-        .scan()?
+    let wifi_scan = wifi.scan()?;
+    let wifi_ap = wifi_scan
         .into_iter()
         .find(|ap| ap.ssid == CONFIG.wifi_ssid)
         .expect("Unable to find SSID");
@@ -49,7 +49,9 @@ fn main() -> Result<()> {
         ssid: CONFIG.wifi_ssid.try_into().unwrap(),
         password: CONFIG.wifi_password.try_into().unwrap(),
         channel: Some(wifi_ap.channel),
-        auth_method: wifi_ap.auth_method.unwrap_or(wifi::AuthMethod::WPA),
+        auth_method: wifi_ap
+            .auth_method
+            .unwrap_or(wifi::AuthMethod::WPA2Personal),
         ..Default::default()
     }))?;
 
@@ -63,14 +65,20 @@ fn main() -> Result<()> {
 
     let mut server = http::server::EspHttpServer::new(&http::server::Configuration::default())?;
 
-    for _ in 0..2 {
-        camera_flash.set_high()?;
-        // we are sleeping here to make sure the watchdog isn't triggered
-        FreeRtos::delay_ms(100);
+    server.fn_handler::<anyhow::Error, _>("/", http::Method::Get, |request| {
+        info!("GET request /");
+        let mut response = request.into_ok_response()?;
+        response.write_all("ok".as_bytes())?;
+        Ok(())
+    })?;
 
-        camera_flash.set_low()?;
-        FreeRtos::delay_ms(500);
-    }
+    // Flash to know that we have connected to wifi and the server is setup.
+    camera_flash.set_high()?;
+    // we are sleeping here to make sure the watchdog isn't triggered
+    FreeRtos::delay_ms(100);
+
+    camera_flash.set_low()?;
+    FreeRtos::delay_ms(500);
 
     let camera = Camera::new(
         peripherals.pins.gpio32, // pwdn
@@ -88,14 +96,12 @@ fn main() -> Result<()> {
         peripherals.pins.gpio22, // pclk
         peripherals.pins.gpio26, // sda
         peripherals.pins.gpio27, // scl
-        // esp_idf_sys::camera::pixformat_t_PIXFORMAT_RGB565,
-        // esp_idf_sys::camera::pixformat_t_PIXFORMAT_GRAYSCALE,
         esp_idf_sys::camera::pixformat_t_PIXFORMAT_JPEG,
-        // esp_idf_sys::camera::framesize_t_FRAMESIZE_UXGA,
-        esp_idf_sys::camera::framesize_t_FRAMESIZE_SVGA,
+        esp_idf_sys::camera::framesize_t_FRAMESIZE_VGA,
     )?;
 
     server.fn_handler::<anyhow::Error, _>("/camera.jpg", http::Method::Get, move |request| {
+        info!("GET request /camera.jpg");
         let framebuffer = camera.get_framebuffer();
 
         if let Some(framebuffer) = framebuffer {
@@ -112,13 +118,6 @@ fn main() -> Result<()> {
             response.write_all("no framebuffer".as_bytes())?;
         }
 
-        Ok(())
-    })?;
-
-    server.fn_handler::<anyhow::Error, _>("/", http::Method::Get, |request| {
-        info!("GET request");
-        let mut response = request.into_ok_response()?;
-        response.write_all("ok".as_bytes())?;
         Ok(())
     })?;
 
