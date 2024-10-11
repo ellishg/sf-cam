@@ -1,12 +1,11 @@
 use anyhow::Result;
-use embedded_svc::{http, io::Write};
-use esp_idf_hal::{delay::FreeRtos, gpio::PinDriver};
+use esp_idf_hal::{delay::FreeRtos, gpio::PinDriver, peripherals::Peripherals};
 use esp_idf_svc::{
-    eventloop::EspSystemEventLoop, hal::peripherals::Peripherals, http::server::EspHttpServer,
-    log::EspLogger, nvs::EspDefaultNvsPartition, wifi,
+    eventloop::EspSystemEventLoop, http, io::Write, log::EspLogger, nvs::EspDefaultNvsPartition,
+    wifi,
 };
 use log::info;
-use sf_cam::espcam::Camera;
+use sf_cam::esp_camera::Camera;
 
 #[derive(Debug)]
 #[toml_cfg::toml_config]
@@ -40,40 +39,21 @@ fn main() -> Result<()> {
     ))?;
     wifi.start()?;
 
-    let ap_infos = wifi.scan()?;
-    info!("SSIDs {:?}", ap_infos);
-
-    let ours = ap_infos.into_iter().find(|a| a.ssid == CONFIG.wifi_ssid);
-    info!("Found {:?}", ours);
-
-    let channel = if let Some(ours) = ours {
-        info!(
-            "Found configured access point {} on channel {}",
-            CONFIG.wifi_ssid, ours.channel
-        );
-        Some(ours.channel)
-    } else {
-        info!(
-            "Configured access point {} not found during scanning, will go with unknown channel",
-            CONFIG.wifi_ssid
-        );
-        None
-    };
+    let wifi_ap = wifi
+        .scan()?
+        .into_iter()
+        .find(|ap| ap.ssid == CONFIG.wifi_ssid)
+        .expect("Unable to find SSID");
 
     wifi.set_configuration(&wifi::Configuration::Client(wifi::ClientConfiguration {
         ssid: CONFIG.wifi_ssid.try_into().unwrap(),
         password: CONFIG.wifi_password.try_into().unwrap(),
-        channel,
-        // auth_method: AuthMethod::WPA2Personal,
-        auth_method: wifi::AuthMethod::WPA,
+        channel: Some(wifi_ap.channel),
+        auth_method: wifi_ap.auth_method.unwrap_or(wifi::AuthMethod::WPA),
         ..Default::default()
     }))?;
 
-    info!("Connecting wifi...");
-
     wifi.connect()?;
-
-    info!("Waiting for DHCP lease...");
 
     wifi.wait_netif_up()?;
 
@@ -81,7 +61,7 @@ fn main() -> Result<()> {
 
     info!("Wifi DHCP info: {:?}", ip_info);
 
-    let mut server = EspHttpServer::new(&esp_idf_svc::http::server::Configuration::default())?;
+    let mut server = http::server::EspHttpServer::new(&http::server::Configuration::default())?;
 
     for _ in 0..2 {
         camera_flash.set_high()?;
@@ -91,7 +71,6 @@ fn main() -> Result<()> {
         camera_flash.set_low()?;
         FreeRtos::delay_ms(500);
     }
-    info!("start");
 
     let camera = Camera::new(
         peripherals.pins.gpio32, // pwdn
@@ -115,7 +94,6 @@ fn main() -> Result<()> {
         // esp_idf_sys::camera::framesize_t_FRAMESIZE_UXGA,
         esp_idf_sys::camera::framesize_t_FRAMESIZE_SVGA,
     )?;
-    info!("initialized");
 
     server.fn_handler::<anyhow::Error, _>("/camera.jpg", http::Method::Get, move |request| {
         let framebuffer = camera.get_framebuffer();

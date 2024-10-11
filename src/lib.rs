@@ -1,1 +1,1 @@
-pub mod espcam;
+pub mod esp_camera;
