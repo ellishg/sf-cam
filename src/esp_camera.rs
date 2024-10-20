@@ -1,5 +1,7 @@
-use esp_idf_hal::gpio::{InputPin, OutputPin};
-use esp_idf_hal::peripheral::Peripheral;
+use esp_idf_hal::{
+    gpio::{InputPin, OutputPin},
+    peripheral::Peripheral,
+};
 use esp_idf_sys::{camera, esp, EspError};
 use std::marker::PhantomData;
 
@@ -234,8 +236,12 @@ impl<'a> Camera<'a> {
         pin_pclk: impl Peripheral<P = impl InputPin + OutputPin> + 'a,
         pin_sda: impl Peripheral<P = impl InputPin + OutputPin> + 'a,
         pin_scl: impl Peripheral<P = impl InputPin + OutputPin> + 'a,
+        xclk_freq_hz: i32,
         pixel_format: camera::pixformat_t,
         frame_size: camera::framesize_t,
+        jpeg_quality: i32,
+        grab_mode: camera::camera_grab_mode_t,
+        fb_location: camera::camera_fb_location_t,
     ) -> Result<Self, EspError> {
         esp_idf_hal::into_ref!(
             pin_pwdn, pin_xclk, pin_d0, pin_d1, pin_d2, pin_d3, pin_d4, pin_d5, pin_d6, pin_d7,
@@ -256,20 +262,15 @@ impl<'a> Camera<'a> {
             pin_vsync: pin_vsync.pin(),
             pin_href: pin_href.pin(),
             pin_pclk: pin_pclk.pin(),
-
-            xclk_freq_hz: 20000000,
+            xclk_freq_hz,
             ledc_timer: esp_idf_sys::ledc_timer_t_LEDC_TIMER_0,
             ledc_channel: esp_idf_sys::ledc_channel_t_LEDC_CHANNEL_0,
-
             pixel_format,
             frame_size,
-
-            jpeg_quality: 12,
+            jpeg_quality,
             fb_count: 1,
-            grab_mode: camera::camera_grab_mode_t_CAMERA_GRAB_WHEN_EMPTY,
-
-            fb_location: camera::camera_fb_location_t_CAMERA_FB_IN_DRAM,
-
+            grab_mode,
+            fb_location,
             __bindgen_anon_1: camera::camera_config_t__bindgen_ty_1 {
                 pin_sccb_sda: pin_sda.pin(),
             },

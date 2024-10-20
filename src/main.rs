@@ -1,4 +1,5 @@
 use anyhow::Result;
+use byte_unit;
 use esp_idf_hal::{delay::FreeRtos, gpio::PinDriver, peripherals::Peripherals};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop, http, io::Write, log::EspLogger, nvs::EspDefaultNvsPartition,
@@ -96,8 +97,12 @@ fn main() -> Result<()> {
         peripherals.pins.gpio22, // pclk
         peripherals.pins.gpio26, // sda
         peripherals.pins.gpio27, // scl
+        10_000_000,              // xclk_freq_hz
         esp_idf_sys::camera::pixformat_t_PIXFORMAT_JPEG,
-        esp_idf_sys::camera::framesize_t_FRAMESIZE_VGA,
+        esp_idf_sys::camera::framesize_t_FRAMESIZE_UXGA,
+        12, // jpeg_quality
+        esp_idf_sys::camera::camera_fb_location_t_CAMERA_FB_IN_PSRAM,
+        esp_idf_sys::camera::camera_grab_mode_t_CAMERA_GRAB_WHEN_EMPTY,
     )?;
 
     server.fn_handler::<anyhow::Error, _>("/camera.jpg", http::Method::Get, move |request| {
@@ -106,6 +111,9 @@ fn main() -> Result<()> {
 
         if let Some(framebuffer) = framebuffer {
             let data = framebuffer.data();
+            let framebuffer_size = byte_unit::Byte::from_u64(data.len() as u64)
+                .get_appropriate_unit(byte_unit::UnitType::Decimal);
+            info!("Framebuffer size: {}", framebuffer_size);
 
             let headers = [
                 ("Content-Type", "image/jpeg"),
