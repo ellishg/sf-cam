@@ -1,5 +1,4 @@
 use anyhow::Result;
-use byte_unit;
 use esp_idf_hal::{delay::FreeRtos, gpio::PinDriver, peripherals::Peripherals};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop, http, io::Write, log::EspLogger, nvs::EspDefaultNvsPartition,
