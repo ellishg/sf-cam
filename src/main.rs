@@ -72,14 +72,6 @@ fn main() -> Result<()> {
         Ok(())
     })?;
 
-    // Flash to know that we have connected to wifi and the server is setup.
-    camera_flash.set_high()?;
-    // we are sleeping here to make sure the watchdog isn't triggered
-    FreeRtos::delay_ms(100);
-
-    camera_flash.set_low()?;
-    FreeRtos::delay_ms(500);
-
     let camera = Camera::new(
         peripherals.pins.gpio32, // pwdn
         peripherals.pins.gpio0,  // xclk
@@ -98,8 +90,8 @@ fn main() -> Result<()> {
         peripherals.pins.gpio27, // scl
         10_000_000,              // xclk_freq_hz
         esp_idf_sys::camera::pixformat_t_PIXFORMAT_JPEG,
-        esp_idf_sys::camera::framesize_t_FRAMESIZE_UXGA,
-        12, // jpeg_quality
+        esp_idf_sys::camera::framesize_t_FRAMESIZE_UXGA, // 1600x1200
+        12,                                              // jpeg_quality
         esp_idf_sys::camera::camera_fb_location_t_CAMERA_FB_IN_PSRAM,
         esp_idf_sys::camera::camera_grab_mode_t_CAMERA_GRAB_WHEN_EMPTY,
     )?;
@@ -127,6 +119,11 @@ fn main() -> Result<()> {
 
         Ok(())
     })?;
+
+    // Flash to know that we have connected to wifi and the server is setup.
+    camera_flash.set_high()?;
+    FreeRtos::delay_ms(100);
+    camera_flash.set_low()?;
 
     // Keep wifi and the server running beyond when main() returns (forever)
     // Do not call this if you ever want to stop or access them later.

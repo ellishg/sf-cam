@@ -284,7 +284,7 @@ impl<'a> Camera<'a> {
         Ok(Self { _p: PhantomData })
     }
 
-    pub fn get_framebuffer(&self) -> Option<FrameBuffer> {
+    fn get_raw_framebuffer(&self) -> Option<FrameBuffer> {
         let fb = unsafe { camera::esp_camera_fb_get() };
         if fb.is_null() {
             None
@@ -293,6 +293,17 @@ impl<'a> Camera<'a> {
                 fb,
                 _p: PhantomData,
             })
+        }
+    }
+
+    pub fn get_framebuffer(&self) -> Option<FrameBuffer> {
+        // There seems to be a bug where the buffer returned by
+        // esp_camera_fb_get() is actually from the prior capture. Call it
+        // once to capture the image, then call it again to get the buffer.
+        if self.get_raw_framebuffer().is_none() {
+            None
+        } else {
+            self.get_raw_framebuffer()
         }
     }
 
