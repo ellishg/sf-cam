@@ -96,6 +96,31 @@ fn main() -> Result<()> {
         esp_idf_sys::camera::camera_grab_mode_t_CAMERA_GRAB_WHEN_EMPTY,
     )?;
 
+    let mut buffers: Vec<Vec<_>> = vec![];
+    for _ in 0..5 {
+        FreeRtos::delay_ms(500);
+        let buffer = camera.get_framebuffer().unwrap();
+        buffers.push(buffer.data().to_vec());
+    }
+
+    for (i, buffer) in buffers.into_iter().enumerate() {
+        let uri = format!("/camera_{}.jpg", i);
+        server.fn_handler::<anyhow::Error, _>(
+            uri.as_str(),
+            http::Method::Get,
+            move |request| {
+                let headers = [
+                    ("Content-Type", "image/jpeg"),
+                    ("Content-Length", &buffer.len().to_string()),
+                ];
+                let mut response = request.into_response(200, Some("OK"), &headers).unwrap();
+                response.write_all(buffer.as_slice())?;
+
+                Ok(())
+            },
+        )?;
+    }
+
     server.fn_handler::<anyhow::Error, _>("/camera.jpg", http::Method::Get, move |request| {
         info!("GET request /camera.jpg");
         let framebuffer = camera.get_framebuffer();
@@ -117,6 +142,18 @@ fn main() -> Result<()> {
             response.write_all("no framebuffer".as_bytes())?;
         }
 
+        Ok(())
+    })?;
+
+    server.fn_handler::<anyhow::Error, _>("/camera.html", http::Method::Get, move |request| {
+        let mut response = request.into_ok_response()?;
+        response.write_all("
+        <img src=\"/camera_0.jpg\">
+        <img src=\"/camera_1.jpg\">
+        <img src=\"/camera_2.jpg\">
+        <img src=\"/camera_3.jpg\">
+        <img src=\"/camera_4.jpg\">
+        ".as_bytes())?;
         Ok(())
     })?;
 
