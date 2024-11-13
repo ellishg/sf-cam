@@ -32,7 +32,7 @@ esp-idf-sys = "0.35.0"
 anyhow = "1.0.89"
 log = "0.4.22"
 toml-cfg = "0.2.0"
-byte-unit = "5.1.4"
+humantime = "2.1.0"
 
 [[package.metadata.esp-idf-sys.extra_components]]
 component_dirs = "components/esp32-camera"

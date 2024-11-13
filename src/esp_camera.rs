@@ -284,6 +284,7 @@ impl<'a> Camera<'a> {
         Ok(Self { _p: PhantomData })
     }
 
+    // TODO: This should probably be &mut self.
     fn get_raw_framebuffer(&self) -> Option<FrameBuffer> {
         let fb = unsafe { camera::esp_camera_fb_get() };
         if fb.is_null() {

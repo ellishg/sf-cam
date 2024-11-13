@@ -1,11 +1,12 @@
 use anyhow::Result;
-use esp_idf_hal::{delay::FreeRtos, gpio::PinDriver, peripherals::Peripherals};
+use esp_idf_hal::{delay::Delay, gpio::PinDriver, peripherals::Peripherals};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop, http, io::Write, log::EspLogger, nvs::EspDefaultNvsPartition,
     wifi,
 };
 use log::info;
 use sf_cam::esp_camera::Camera;
+use std::time::Duration;
 
 #[derive(Debug)]
 #[toml_cfg::toml_config]
@@ -14,6 +15,10 @@ pub struct Config {
     wifi_ssid: &'static str,
     #[default("")]
     wifi_password: &'static str,
+    #[default("1h")]
+    timelapse_period: &'static str,
+    #[default(6)]
+    picture_count: u32,
 }
 
 fn main() -> Result<()> {
@@ -27,6 +32,7 @@ fn main() -> Result<()> {
     let peripherals = Peripherals::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
     let nvs = EspDefaultNvsPartition::take()?;
+    let delay = Delay::new_default();
 
     let mut camera_flash = PinDriver::output(peripherals.pins.gpio4)?;
 
@@ -96,70 +102,31 @@ fn main() -> Result<()> {
         esp_idf_sys::camera::camera_grab_mode_t_CAMERA_GRAB_WHEN_EMPTY,
     )?;
 
-    let mut buffers: Vec<Vec<_>> = vec![];
-    for _ in 0..5 {
-        FreeRtos::delay_ms(500);
-        let buffer = camera.get_framebuffer().unwrap();
-        buffers.push(buffer.data().to_vec());
-    }
+    server.fn_handler::<anyhow::Error, _>("/index.html", http::Method::Get, move |request| {
+        info!("GET request /index.html");
 
-    for (i, buffer) in buffers.into_iter().enumerate() {
-        let uri = format!("/camera_{}.jpg", i);
-        server.fn_handler::<anyhow::Error, _>(uri.as_str(), http::Method::Get, move |request| {
-            let headers = [
-                ("Content-Type", "image/jpeg"),
-                ("Content-Length", &buffer.len().to_string()),
-            ];
-            let mut response = request.into_response(200, Some("OK"), &headers).unwrap();
-            response.write_all(buffer.as_slice())?;
-
-            Ok(())
-        })?;
-    }
-
-    server.fn_handler::<anyhow::Error, _>("/camera.jpg", http::Method::Get, move |request| {
-        info!("GET request /camera.jpg");
-        let framebuffer = camera.get_framebuffer();
-
-        if let Some(framebuffer) = framebuffer {
-            let data = framebuffer.data();
-            let framebuffer_size = byte_unit::Byte::from_u64(data.len() as u64)
-                .get_appropriate_unit(byte_unit::UnitType::Decimal);
-            info!("Framebuffer size: {}", framebuffer_size);
-
-            let headers = [
-                ("Content-Type", "image/jpeg"),
-                ("Content-Length", &data.len().to_string()),
-            ];
-            let mut response = request.into_response(200, Some("OK"), &headers).unwrap();
-            response.write_all(data)?;
-        } else {
-            let mut response = request.into_ok_response()?;
-            response.write_all("no framebuffer".as_bytes())?;
-        }
-
-        Ok(())
-    })?;
-
-    server.fn_handler::<anyhow::Error, _>("/camera.html", http::Method::Get, move |request| {
+        // let headers = [
+        //     ("Content-Type", "image/jpeg"),
+        //     ("Content-Length", &data.len().to_string()),
+        // ];
+        // let mut response = request.into_response(200, Some("OK"), &headers).unwrap();
+        // response.write_all(data)?;
         let mut response = request.into_ok_response()?;
-        response.write_all(
-            "
-        <img src=\"/camera_0.jpg\">
-        <img src=\"/camera_1.jpg\">
-        <img src=\"/camera_2.jpg\">
-        <img src=\"/camera_3.jpg\">
-        <img src=\"/camera_4.jpg\">
-        "
-            .as_bytes(),
-        )?;
+        response.write_all("TODO: Report interesting info here.".as_bytes())?;
+
         Ok(())
     })?;
 
     // Flash to know that we have connected to wifi and the server is setup.
     camera_flash.set_high()?;
-    FreeRtos::delay_ms(100);
+    delay.delay_ms(100);
     camera_flash.set_low()?;
+
+    let timelapse_period = CONFIG
+        .timelapse_period
+        .parse::<humantime::Duration>()?
+        .into();
+    generate_timelapse(camera, timelapse_period, CONFIG.picture_count, delay)?;
 
     // Keep wifi and the server running beyond when main() returns (forever)
     // Do not call this if you ever want to stop or access them later.
@@ -169,5 +136,35 @@ fn main() -> Result<()> {
     core::mem::forget(wifi);
     core::mem::forget(server);
 
+    Ok(())
+}
+
+fn generate_timelapse(
+    camera: Camera,
+    timelapse_period: Duration,
+    picture_count: u32,
+    delay: Delay,
+) -> Result<()> {
+    assert!(picture_count > 0);
+
+    let delay_time = timelapse_period / picture_count;
+    for _ in 0..picture_count - 1 {
+        capture_picture(&camera)?;
+        delay.delay_ms(delay_time.as_millis().try_into()?);
+    }
+    // We don't want a delay after the last picture.
+    capture_picture(&camera)?;
+
+    // TODO: load all pictures and generate video timelapse
+    // TODO: save to file
+
+    Ok(())
+}
+
+fn capture_picture(camera: &Camera) -> Result<()> {
+    let _framebuffer = camera
+        .get_framebuffer()
+        .expect("unable to capture framebuffer");
+    // TODO: Save to file
     Ok(())
 }
