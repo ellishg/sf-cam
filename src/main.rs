@@ -78,16 +78,16 @@ fn main() -> Result<()> {
     server.fn_handler::<anyhow::Error, _>("/", http::Method::Get, move |request| {
         info!("GET request /");
         let data = last_framebuffer_clone.lock().unwrap().to_vec();
-        if data.len() > 0 {
+        if data.is_empty() {
+            let mut response = request.into_ok_response()?;
+            response.write_all("No image yet.".as_bytes())?;
+        } else {
             let headers = [
                 ("Content-Type", "image/jpeg"),
                 ("Content-Length", &data.len().to_string()),
             ];
             let mut response = request.into_response(200, Some("OK"), &headers)?;
             response.write_all(data.as_slice())?;
-        } else {
-            let mut response = request.into_ok_response()?;
-            response.write_all("No image yet.".as_bytes())?;
         }
         Ok(())
     })?;
