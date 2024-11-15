@@ -1,11 +1,20 @@
 use anyhow::Result;
-use esp_idf_hal::{delay::Delay, gpio::PinDriver, peripherals::Peripherals};
-use esp_idf_svc::{
-    eventloop::EspSystemEventLoop, http, io::Write, log::EspLogger, nvs::EspDefaultNvsPartition,
-    wifi,
+use esp_idf_hal::delay::Delay;
+use esp_idf_hal::gpio::PinDriver;
+use esp_idf_hal::peripherals::Peripherals;
+use esp_idf_svc::eventloop::EspSystemEventLoop;
+use esp_idf_svc::io::Write;
+use esp_idf_svc::log::EspLogger;
+use esp_idf_svc::nvs::EspDefaultNvsPartition;
+use esp_idf_svc::{http, wifi};
+use esp_idf_sys::esp;
+use esp_idf_sys::{
+    esp_vfs_fat_mount_config_t, esp_vfs_fat_sdmmc_mount, sdmmc_card_t, sdmmc_host_t,
+    sdmmc_slot_config_t,
 };
 use log::info;
 use sf_cam::esp_camera::Camera;
+use std::ffi::CString;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -36,6 +45,24 @@ fn main() -> Result<()> {
     let delay = Delay::new_default();
 
     let mut camera_flash = PinDriver::output(peripherals.pins.gpio4)?;
+
+    let host: sdmmc_host_t = Default::default();
+    let slot_config: sdmmc_slot_config_t = Default::default();
+    let mount_config: esp_vfs_fat_mount_config_t = Default::default();
+    let mut card: *mut sdmmc_card_t = std::ptr::null_mut();
+    let mount_point = CString::new("/sdcard")?;
+
+    esp!(unsafe {
+        esp_vfs_fat_sdmmc_mount(
+            mount_point.as_ptr(),
+            &host,
+            &slot_config as *const sdmmc_slot_config_t as *const std::ffi::c_void,
+            &mount_config,
+            &mut card,
+        )
+    })?;
+
+    info!("Mounted SD card at {}", mount_point.to_str()?);
 
     let mut wifi = wifi::BlockingWifi::wrap(
         wifi::EspWifi::new(peripherals.modem, sys_loop.clone(), Some(nvs))?,
