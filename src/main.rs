@@ -182,12 +182,12 @@ fn generate_timelapse(
     assert!(picture_count > 0);
 
     let delay_time = timelapse_period / picture_count;
-    for _ in 0..picture_count - 1 {
-        capture_picture(&camera)?;
+    for i in 0..picture_count - 1 {
+        capture_picture(i, &camera)?;
         delay.delay_ms(delay_time.as_millis().try_into()?);
     }
     // We don't want a delay after the last picture.
-    capture_picture(&camera)?;
+    capture_picture(picture_count, &camera)?;
 
     // TODO: load all pictures and generate video timelapse
     // TODO: save to file
@@ -195,8 +195,9 @@ fn generate_timelapse(
     Ok(())
 }
 
-fn capture_picture(camera: &Camera) -> Result<()> {
+fn capture_picture(i: u32, camera: &Camera) -> Result<()> {
     let framebuffer = camera.get_framebuffer().unwrap();
+    std::fs::write(format!("/SDCARD/P{}", i), framebuffer.data())?;
     std::fs::write("/SDCARD/LATEST", framebuffer.data())?;
     Ok(())
 }
