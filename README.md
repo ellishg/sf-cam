@@ -15,4 +15,4 @@ cargo install espflash
   * https://github.com/espressif/esp-idf/tree/master/examples/storage/sd_card/sdmmc
   * https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/storage/sdmmc.html
   * https://crates.io/crates/embedded-sdmmc
-  * https://github.com/hnz1102/timeleapcam
+  

@@ -6,8 +6,9 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-esp-idf-hal = "0.44.1"
-esp-idf-svc = { version = "0.49", features = ["alloc"] }
+# TODO: Need a recent hash to support the new "MountedFatfs::mount()" API.
+esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal.git", rev = "97c01ef814d75f43d9155a9876ef440a7f5a3cc0" }
+esp-idf-svc = { git = "https://github.com/ellishg/esp-idf-svc.git", rev = "0d3675f89ee072c91f9133a91877ff62f5147112", features = ["experimental"] }
 esp-idf-sys = "0.35.0"
 anyhow = "1.0.89"
 log = "0.4.22"

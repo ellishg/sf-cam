@@ -1,20 +1,19 @@
 use anyhow::Result;
 use esp_idf_hal::delay::Delay;
-use esp_idf_hal::gpio::PinDriver;
+use esp_idf_hal::gpio;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_svc::eventloop::EspSystemEventLoop;
+use esp_idf_svc::fs::fatfs::Fatfs;
+use esp_idf_svc::hal::sd::{
+    mmc::SdMmcHostConfiguration, mmc::SdMmcHostDriver, SdCardConfiguration, SdCardDriver,
+};
+use esp_idf_svc::io::vfs::MountedFatfs;
 use esp_idf_svc::io::Write;
 use esp_idf_svc::log::EspLogger;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::{http, wifi};
-use esp_idf_sys::esp;
-use esp_idf_sys::{
-    esp_vfs_fat_mount_config_t, esp_vfs_fat_sdmmc_mount, sdmmc_card_t, sdmmc_host_t,
-    sdmmc_slot_config_t,
-};
 use log::info;
 use sf_cam::esp_camera::Camera;
-use std::ffi::CString;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -40,29 +39,49 @@ fn main() -> Result<()> {
     EspLogger::initialize_default();
 
     let peripherals = Peripherals::take()?;
+    let pins = peripherals.pins;
     let sys_loop = EspSystemEventLoop::take()?;
     let nvs = EspDefaultNvsPartition::take()?;
     let delay = Delay::new_default();
 
-    let mut camera_flash = PinDriver::output(peripherals.pins.gpio4)?;
+    let sd_card_driver = SdCardDriver::new_mmc(
+        SdMmcHostDriver::new_slot1_4bits(
+            peripherals.sdmmc1,
+            pins.gpio15, // cmd
+            pins.gpio14, // clk
+            pins.gpio2,  // d0
+            pins.gpio4,  // d1
+            pins.gpio12, // d2
+            pins.gpio13, // d3
+            None::<gpio::AnyIOPin>,
+            None::<gpio::AnyIOPin>,
+            &SdMmcHostConfiguration::new(),
+        )?,
+        // TODO: We can also use Data width bit 1 to avoid using gpio 4 connect to the flash LED, but it might be slower.
+        // SdMmcHostDriver::new_slot1_1bit(
+        //     peripherals.sdmmc1,
+        //     pins.gpio15,
+        //     pins.gpio14,
+        //     pins.gpio2,
+        //     None::<gpio::AnyIOPin>,
+        //     None::<gpio::AnyIOPin>,
+        //     &SdMmcHostConfiguration::new(),
+        // )?,
+        &SdCardConfiguration::new(),
+    )?;
 
-    let host: sdmmc_host_t = Default::default();
-    let slot_config: sdmmc_slot_config_t = Default::default();
-    let mount_config: esp_vfs_fat_mount_config_t = Default::default();
-    let mut card: *mut sdmmc_card_t = std::ptr::null_mut();
-    let mount_point = CString::new("/sdcard")?;
+    // Keep it around or else it will be dropped and unmounted
+    let _mounted_fatfs = MountedFatfs::mount(Fatfs::new_sdcard(0, sd_card_driver)?, "/sdcard", 4)?;
+    info!("SD card mounted");
 
-    esp!(unsafe {
-        esp_vfs_fat_sdmmc_mount(
-            mount_point.as_ptr(),
-            &host,
-            &slot_config as *const sdmmc_slot_config_t as *const std::ffi::c_void,
-            &mount_config,
-            &mut card,
-        )
-    })?;
+    // TODO: Does this pin conflict with the sd card?
+    // https://dr-mntn.net/2021/02/using-the-sd-card-in-1-bit-mode-on-the-esp32-cam-from-ai-thinker
+    // let mut camera_flash = gpio::PinDriver::output(pins.gpio4)?;
+    // camera_flash.set_low()?;
 
-    info!("Mounted SD card at {}", mount_point.to_str()?);
+    for entry in std::fs::read_dir("/sdcard")? {
+        info!("Entry: {:?}", entry?.file_name());
+    }
 
     let mut wifi = wifi::BlockingWifi::wrap(
         wifi::EspWifi::new(peripherals.modem, sys_loop.clone(), Some(nvs))?,
@@ -120,22 +139,22 @@ fn main() -> Result<()> {
     })?;
 
     let camera = Camera::new(
-        peripherals.pins.gpio32, // pwdn
-        peripherals.pins.gpio0,  // xclk
-        peripherals.pins.gpio5,  // d0
-        peripherals.pins.gpio18, // d1
-        peripherals.pins.gpio19, // d2
-        peripherals.pins.gpio21, // d3
-        peripherals.pins.gpio36, // d4
-        peripherals.pins.gpio39, // d5
-        peripherals.pins.gpio34, // d6
-        peripherals.pins.gpio35, // d7
-        peripherals.pins.gpio25, // vsync
-        peripherals.pins.gpio23, // href
-        peripherals.pins.gpio22, // pclk
-        peripherals.pins.gpio26, // sda
-        peripherals.pins.gpio27, // scl
-        10_000_000,              // xclk_freq_hz
+        pins.gpio32, // pwdn
+        pins.gpio0,  // xclk
+        pins.gpio5,  // d0
+        pins.gpio18, // d1
+        pins.gpio19, // d2
+        pins.gpio21, // d3
+        pins.gpio36, // d4
+        pins.gpio39, // d5
+        pins.gpio34, // d6
+        pins.gpio35, // d7
+        pins.gpio25, // vsync
+        pins.gpio23, // href
+        pins.gpio22, // pclk
+        pins.gpio26, // sda
+        pins.gpio27, // scl
+        10_000_000,  // xclk_freq_hz
         esp_idf_sys::camera::pixformat_t_PIXFORMAT_JPEG,
         esp_idf_sys::camera::framesize_t_FRAMESIZE_UXGA, // 1600x1200
         12,                                              // jpeg_quality
@@ -144,9 +163,9 @@ fn main() -> Result<()> {
     )?;
 
     // Flash to know that we have connected to wifi and the server is setup.
-    camera_flash.set_high()?;
-    delay.delay_ms(100);
-    camera_flash.set_low()?;
+    // camera_flash.set_high()?;
+    // delay.delay_ms(100);
+    // camera_flash.set_low()?;
 
     let timelapse_period = CONFIG
         .timelapse_period
