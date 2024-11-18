@@ -14,7 +14,6 @@ use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::{http, wifi};
 use log::info;
 use sf_cam::esp_camera::Camera;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[derive(Debug)]
@@ -44,6 +43,11 @@ fn main() -> Result<()> {
     let nvs = EspDefaultNvsPartition::take()?;
     let delay = Delay::new_default();
 
+    // TODO: This pin conflicts with the sd card
+    // https://dr-mntn.net/2021/02/using-the-sd-card-in-1-bit-mode-on-the-esp32-cam-from-ai-thinker
+    // let mut camera_flash = gpio::PinDriver::output(pins.gpio4)?;
+    // camera_flash.set_low()?;
+
     let sd_card_driver = SdCardDriver::new_mmc(
         SdMmcHostDriver::new_slot1_4bits(
             peripherals.sdmmc1,
@@ -70,18 +74,10 @@ fn main() -> Result<()> {
         &SdCardConfiguration::new(),
     )?;
 
-    // Keep it around or else it will be dropped and unmounted
-    let _mounted_fatfs = MountedFatfs::mount(Fatfs::new_sdcard(0, sd_card_driver)?, "/sdcard", 4)?;
+    // Apparently filenames must have the 8.3 name format.
+    // https://en.wikipedia.org/wiki/8.3_filename
+    let fatfs = MountedFatfs::mount(Fatfs::new_sdcard(0, sd_card_driver)?, "/SDCARD", 4)?;
     info!("SD card mounted");
-
-    // TODO: Does this pin conflict with the sd card?
-    // https://dr-mntn.net/2021/02/using-the-sd-card-in-1-bit-mode-on-the-esp32-cam-from-ai-thinker
-    // let mut camera_flash = gpio::PinDriver::output(pins.gpio4)?;
-    // camera_flash.set_low()?;
-
-    for entry in std::fs::read_dir("/sdcard")? {
-        info!("Entry: {:?}", entry?.file_name());
-    }
 
     let mut wifi = wifi::BlockingWifi::wrap(
         wifi::EspWifi::new(peripherals.modem, sys_loop.clone(), Some(nvs))?,
@@ -118,22 +114,19 @@ fn main() -> Result<()> {
 
     let mut server = http::server::EspHttpServer::new(&http::server::Configuration::default())?;
 
-    let last_framebuffer = Arc::new(Mutex::new(Vec::new()));
-
-    let last_framebuffer_clone = last_framebuffer.clone();
     server.fn_handler::<anyhow::Error, _>("/", http::Method::Get, move |request| {
         info!("GET request /");
-        let data = last_framebuffer_clone.lock().unwrap().to_vec();
-        if data.is_empty() {
-            let mut response = request.into_ok_response()?;
-            response.write_all("No image yet.".as_bytes())?;
-        } else {
+        if std::fs::exists("/SDCARD/LATEST")? {
+            let data = std::fs::read("/SDCARD/LATEST")?;
             let headers = [
                 ("Content-Type", "image/jpeg"),
                 ("Content-Length", &data.len().to_string()),
             ];
             let mut response = request.into_response(200, Some("OK"), &headers)?;
             response.write_all(data.as_slice())?;
+        } else {
+            let mut response = request.into_ok_response()?;
+            response.write_all("No image yet.".as_bytes())?;
         }
         Ok(())
     })?;
@@ -171,21 +164,11 @@ fn main() -> Result<()> {
         .timelapse_period
         .parse::<humantime::Duration>()?
         .into();
-    generate_timelapse(
-        camera,
-        timelapse_period,
-        CONFIG.picture_count,
-        last_framebuffer,
-        delay,
-    )?;
+    generate_timelapse(camera, timelapse_period, CONFIG.picture_count, delay)?;
 
-    // Keep wifi and the server running beyond when main() returns (forever)
-    // Do not call this if you ever want to stop or access them later.
-    // Otherwise you can either add an infinite loop so the main task
-    // never returns, or you can move them to another thread.
-    // https://doc.rust-lang.org/stable/core/mem/fn.forget.html
     core::mem::forget(wifi);
     core::mem::forget(server);
+    core::mem::forget(fatfs);
 
     Ok(())
 }
@@ -194,18 +177,17 @@ fn generate_timelapse(
     camera: Camera,
     timelapse_period: Duration,
     picture_count: u32,
-    last_framebuffer: Arc<Mutex<Vec<u8>>>,
     delay: Delay,
 ) -> Result<()> {
     assert!(picture_count > 0);
 
     let delay_time = timelapse_period / picture_count;
     for _ in 0..picture_count - 1 {
-        capture_picture(&camera, last_framebuffer.clone())?;
+        capture_picture(&camera)?;
         delay.delay_ms(delay_time.as_millis().try_into()?);
     }
     // We don't want a delay after the last picture.
-    capture_picture(&camera, last_framebuffer.clone())?;
+    capture_picture(&camera)?;
 
     // TODO: load all pictures and generate video timelapse
     // TODO: save to file
@@ -213,11 +195,8 @@ fn generate_timelapse(
     Ok(())
 }
 
-fn capture_picture(camera: &Camera, last_framebuffer: Arc<Mutex<Vec<u8>>>) -> Result<()> {
-    let framebuffer = camera
-        .get_framebuffer()
-        .expect("unable to capture framebuffer");
-    *last_framebuffer.lock().unwrap() = framebuffer.data().to_vec();
-    // TODO: Save to file
+fn capture_picture(camera: &Camera) -> Result<()> {
+    let framebuffer = camera.get_framebuffer().unwrap();
+    std::fs::write("/SDCARD/LATEST", framebuffer.data())?;
     Ok(())
 }
