@@ -12,6 +12,7 @@ use esp_idf_svc::io::Write;
 use esp_idf_svc::log::EspLogger;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::{http, wifi};
+use image::codecs::gif;
 use log::info;
 use sf_cam::esp_camera::Camera;
 use std::time::Duration;
@@ -189,8 +190,22 @@ fn generate_timelapse(
     // We don't want a delay after the last picture.
     capture_picture(picture_count, &camera)?;
 
-    // TODO: load all pictures and generate video timelapse
-    // TODO: save to file
+    let mut gif_file = std::fs::File::create("/SDCARD/GIF")?;
+    let mut gif = gif::GifEncoder::new(&mut gif_file);
+    gif.set_repeat(gif::Repeat::Infinite)?;
+
+    let delay = image::Delay::from_saturating_duration(Duration::from_millis(10));
+    let frames = (0..picture_count).map(|i| {
+        let buffer = std::fs::read(format!("/SDCARD/P{}", i))?;
+        // FIXME: It seems that decoding image overflows the stack.
+        let jpeg =
+            image::ImageReader::with_format(std::io::Cursor::new(buffer), image::ImageFormat::Jpeg)
+                .decode()?;
+        let frame = image::Frame::from_parts(jpeg.into_rgba8(), 0, 0, delay);
+        Ok(frame)
+    });
+
+    gif.try_encode_frames(frames)?;
 
     Ok(())
 }
