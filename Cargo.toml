@@ -14,7 +14,6 @@ anyhow = "1.0.89"
 log = "0.4.22"
 toml-cfg = "0.2.0"
 humantime = "2.1.0"
-image = { version = "0.25.5", features = ["gif"] }
 
 [[package.metadata.esp-idf-sys.extra_components]]
 component_dirs = "components/esp32-camera"
